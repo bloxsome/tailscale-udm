@@ -72,14 +72,28 @@ fi
 
 log_info "✓ Manifest downloaded successfully"
 
-# Parse manifest using POSIX-compatible method
-PACKAGE_URL=$(grep -o '"download_url": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"download_url": *"\([^"]*\)"/\1/')
-EXPECTED_SHA256=$(grep -o '"sha256": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"sha256": *"\([^"]*\)"/\1/')
-PACKAGE_VERSION=$(grep -o '"version": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"version": *"\([^"]*\)"/\1/')
-BUILD_NUMBER=$(grep -o '"build_number": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"build_number": *"\([^"]*\)"/\1/')
+# Parse manifest (prefer jq if available, fallback to grep/sed)
+if command -v jq >/dev/null 2>&1; then
+  log_info "Using jq for JSON parsing..."
+  PACKAGE_URL=$(jq -r '.download_url' "${WORKDIR}/latest.json" 2>/dev/null)
+  EXPECTED_SHA256=$(jq -r '.sha256' "${WORKDIR}/latest.json" 2>/dev/null)
+  PACKAGE_VERSION=$(jq -r '.version' "${WORKDIR}/latest.json" 2>/dev/null)
+  BUILD_NUMBER=$(jq -r '.build_number' "${WORKDIR}/latest.json" 2>/dev/null)
+else
+  log_info "Using grep/sed for JSON parsing (jq not found)..."
+  PACKAGE_URL=$(grep -o '"download_url": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"download_url": *"\([^"]*\)"/\1/')
+  EXPECTED_SHA256=$(grep -o '"sha256": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"sha256": *"\([^"]*\)"/\1/')
+  PACKAGE_VERSION=$(grep -o '"version": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"version": *"\([^"]*\)"/\1/')
+  BUILD_NUMBER=$(grep -o '"build_number": *"[^"]*"' "${WORKDIR}/latest.json" | sed 's/"build_number": *"\([^"]*\)"/\1/')
+fi
 
 if [ -z "$PACKAGE_URL" ] || [ -z "$EXPECTED_SHA256" ]; then
   log_fatal "Failed to parse manifest. Invalid JSON format."
+fi
+
+# Validate version format
+if ! echo "$PACKAGE_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  log_fatal "Invalid version format in manifest: $PACKAGE_VERSION"
 fi
 
 echo ""
@@ -168,10 +182,36 @@ else
 fi
 
 echo ""
+
+# Backup existing installation if present
+BACKUP_DIR="${PACKAGE_ROOT}.backup.$(date +%Y%m%d-%H%M%S)"
+if [ -d "$PACKAGE_ROOT" ]; then
+  log_info "Backing up existing installation to: $BACKUP_DIR"
+  if ! cp -R "$PACKAGE_ROOT" "$BACKUP_DIR" 2>/dev/null; then
+    log_warn "Failed to create backup (continuing anyway)"
+  else
+    log_info "✓ Backup created successfully"
+    # Clean up old backups (keep last 3)
+    ls -dt "${PACKAGE_ROOT}.backup."* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+  fi
+else
+  log_info "No existing installation found (first-time install)"
+fi
+
 log_info "Extracting verified package..."
 
 # Extract the package
-tar xzf "${WORKDIR}/tailscale-udm.tgz" -C "$(dirname -- "${PACKAGE_ROOT}")"
+if ! tar xzf "${WORKDIR}/tailscale-udm.tgz" -C "$(dirname -- "${PACKAGE_ROOT}")"; then
+  log_error "Failed to extract package"
+  if [ -d "$BACKUP_DIR" ]; then
+    log_info "Attempting to restore from backup..."
+    rm -rf "$PACKAGE_ROOT" 2>/dev/null || true
+    mv "$BACKUP_DIR" "$PACKAGE_ROOT"
+    log_fatal "Installation failed. Previous version restored."
+  else
+    log_fatal "Installation failed and no backup available."
+  fi
+fi
 
 log_info "✓ Package extracted successfully"
 

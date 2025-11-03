@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
 
       - name: Determine Tailscale version
         id: version
@@ -36,8 +36,20 @@ jobs:
           else
             # Fetch latest Tailscale version from their releases
             echo "Fetching latest Tailscale version..."
-            VERSION=$(curl -sSL https://api.github.com/repos/tailscale/tailscale/releases/latest | grep -oP '"tag_name": "v\K[^"]+')
+            VERSION=$(curl -sSL https://api.github.com/repos/tailscale/tailscale/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)
             BUILD_NUMBER="1"
+          fi
+
+          # Validate version format (X.Y.Z)
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: Invalid version format: $VERSION (expected: X.Y.Z)"
+            exit 1
+          fi
+
+          # Validate build number is numeric
+          if ! echo "$BUILD_NUMBER" | grep -qE '^[0-9]+$'; then
+            echo "ERROR: Invalid build number: $BUILD_NUMBER (expected: numeric)"
+            exit 1
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -266,7 +278,7 @@ jobs:
           cat build/output/RELEASE_NOTES.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564  # v2.0.4
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Tailscale-UDM ${{ steps.version.outputs.tag }}
@@ -299,3 +311,35 @@ jobs:
           echo 'export GITHUB_REPO="bloxsome/tailscale-udm"' >> $GITHUB_STEP_SUMMARY
           echo 'curl -sSL https://raw.githubusercontent.com/$GITHUB_REPO/main/install-verified.sh | sh' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Create issue on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const title = `Automated build failed for Tailscale version check`;
+            const body = `The weekly automated build workflow failed.
+
+            **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            **Triggered:** ${{ github.event_name }}
+            **Branch:** ${{ github.ref }}
+
+            Please investigate and manually trigger a build if needed.`;
+
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'automated-build-failure'
+            });
+
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['automated-build-failure', 'bug']
+              });
+            }
