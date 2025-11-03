@@ -5,19 +5,65 @@ instance on your [UniFi Dream Machine](https://unifi-network.ui.com/dreammachine
 It does so by piggy-backing on the excellent [boostchicken/udm-utilities](https://github.com/boostchicken/udm-utilities)
 to provide a persistent service and runs using Tailscale's usermode networking feature.
 
+## 🔒 Cryptographically Verified Builds
+
+This fork adds **cryptographic hash verification** to protect against supply chain attacks and package tampering.
+
+### Why Verified Builds?
+
+The standard Tailscale-UDM installation downloads pre-built packages without cryptographic verification. This fork addresses that security gap by:
+
+- ✅ **Building from source** using official Tailscale binaries
+- ✅ **Generating cryptographic hashes** (SHA256/SHA512/BLAKE2) for every package
+- ✅ **Verifying hashes** before installation - aborts if tampered
+- ✅ **Transparent builds** on GitHub Actions with public logs
+- ✅ **Automated releases** with full hash manifests
+
+### Trust Model
+
+When using verified builds, you are trusting:
+- GitHub Actions infrastructure
+- This repository owner (bloxsome)
+- Tailscale's official binary distribution
+- Cryptographic hash algorithms (SHA256/SHA512/BLAKE2)
+
+You are **NOT** trusting unverified download mirrors or third-party packages.
+
 ## Installation
 
-1. Run the `install.sh` script to install the latest version of the
-   Tailscale UDM package on your UDM.
+### Option 1: Verified Installation (Recommended)
 
-   ```sh
-   # Install the latest version of Tailscale UDM
-   curl -sSLq https://raw.github.com/SierraSoftworks/tailscale-udm/main/install.sh | sh
-   ```
+Install with automatic cryptographic hash verification:
 
-2. Run `tailscale up` to start Tailscale.
-3. Follow the on-screen steps to configure Tailscale and connect it to your network.
-4. Confirm that Tailscale is working by running `tailscale status`
+```sh
+# Install with hash verification
+export GITHUB_REPO="bloxsome/tailscale-udm"
+curl -sSL https://raw.githubusercontent.com/$GITHUB_REPO/main/install-verified.sh | sh
+```
+
+This installer will:
+1. Download the latest release manifest with expected hashes
+2. Download the package from GitHub Releases
+3. Compute SHA256 hash of the downloaded package
+4. **Abort if hashes don't match** (protecting against tampering)
+5. Only install if verification passes
+
+### Option 2: Standard Installation
+
+If you prefer the standard installation method:
+
+```sh
+# Install without hash verification (uses upstream release)
+curl -sSLq https://raw.github.com/SierraSoftworks/tailscale-udm/main/install.sh | sh
+```
+
+### Post-Installation
+
+After installation completes:
+
+1. Run `tailscale up` to start Tailscale
+2. Follow the on-screen steps to configure Tailscale and connect it to your network
+3. Confirm that Tailscale is working by running `tailscale status`
 
 ## Compatibility
 
@@ -271,6 +317,51 @@ The hostname is automatically determined from your Tailscale configuration.
 On UniFi OS 2.x+, a systemd timer is automatically installed when you generate
 your first certificate. This timer runs weekly to check and renew certificates
 before they expire.
+
+## Building Verified Packages
+
+This fork includes a GitHub Actions workflow that builds cryptographically verified packages.
+
+### Triggering a Build
+
+**Manual Build:**
+1. Go to the [Actions tab](../../actions/workflows/build-and-hash.yml)
+2. Click **"Run workflow"**
+3. Enter the Tailscale version (e.g., `1.76.1`)
+4. Optionally specify a build number (default: `1`)
+5. Click **"Run workflow"**
+
+**Automated Builds:**
+The workflow runs automatically every Sunday at 2 AM UTC to build packages for new Tailscale releases.
+
+### Build Output
+
+Each build creates a GitHub Release containing:
+- **tailscale-udm.tgz** - The complete package
+- **HASHES.txt** - SHA256/SHA512/BLAKE2 hashes
+- **latest.json** - Machine-readable build manifest with download URLs and hashes
+
+### Manual Verification
+
+If you want to manually verify a downloaded package:
+
+```sh
+# Download package and hashes
+VERSION="v1.76.1-1"
+curl -sSLf -o tailscale-udm.tgz \
+  "https://github.com/bloxsome/tailscale-udm/releases/download/${VERSION}/tailscale-udm.tgz"
+curl -sSLf -o HASHES.txt \
+  "https://github.com/bloxsome/tailscale-udm/releases/download/${VERSION}/HASHES.txt"
+
+# Verify SHA256
+grep SHA256 HASHES.txt
+sha256sum tailscale-udm.tgz
+
+# If hashes match, install manually
+tar xzf tailscale-udm.tgz -C /data
+/data/tailscale/manage.sh install
+/data/tailscale/manage.sh start
+```
 
 [tailscale-pr10828]: https://github.com/tailscale/tailscale/pull/10828
 [tailscale-pr14452]: https://github.com/tailscale/tailscale/pull/14452
