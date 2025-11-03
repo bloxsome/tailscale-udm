@@ -191,8 +191,11 @@ if [ -d "$PACKAGE_ROOT" ]; then
     log_warn "Failed to create backup (continuing anyway)"
   else
     log_info "✓ Backup created successfully"
-    # Clean up old backups (keep last 3)
-    ls -dt "${PACKAGE_ROOT}.backup."* 2>/dev/null | tail -n +4 | xargs rm -rf 2>/dev/null || true
+    # Clean up old backups (keep last 3) - use find instead of ls for safety
+    find "$(dirname "$PACKAGE_ROOT")" -maxdepth 1 -type d -name "$(basename "$PACKAGE_ROOT").backup.*" 2>/dev/null | \
+      sort -r | tail -n +4 | while IFS= read -r old_backup; do
+        [ -n "$old_backup" ] && rm -rf "$old_backup"
+      done 2>/dev/null || true
   fi
 else
   log_info "No existing installation found (first-time install)"
