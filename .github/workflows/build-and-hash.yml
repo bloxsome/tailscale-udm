@@ -226,11 +226,11 @@ jobs:
 
           ### 🔐 Verification Hashes
 
-          **SHA256:** `${{ steps.hashes.outputs.sha256 }}`
+          **SHA256:** ${{ steps.hashes.outputs.sha256 }}
 
-          **SHA512:** `${{ steps.hashes.outputs.sha512 }}`
+          **SHA512:** ${{ steps.hashes.outputs.sha512 }}
 
-          **BLAKE2:** `${{ steps.hashes.outputs.blake2 }}`
+          **BLAKE2:** ${{ steps.hashes.outputs.blake2 }}
 
           ### 📥 Installation
 
